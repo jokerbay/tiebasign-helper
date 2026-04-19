@@ -2,23 +2,12 @@ package top.srcrs;
 
 import com.alibaba.fastjson.JSONArray;
 import com.alibaba.fastjson.JSONObject;
-import org.apache.http.HttpEntity;
-import org.apache.http.HttpResponse;
-import org.apache.http.client.HttpClient;
-import org.apache.http.client.methods.HttpPost;
-import org.apache.http.entity.StringEntity;
-import org.apache.http.impl.client.HttpClients;
-import org.apache.http.util.EntityUtils;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import top.srcrs.domain.Cookie;
+import top.srcrs.notification.NotificationKit;
 import top.srcrs.util.Encryption;
 import top.srcrs.util.Request;
-import java.io.BufferedReader;
-import java.io.InputStreamReader;
-import java.net.HttpURLConnection;
-import java.net.URL;
-import java.net.URLEncoder;
 import java.util.*;
 import java.util.concurrent.TimeUnit;
 
@@ -77,9 +66,9 @@ public class Run {
 
     public static void main(String[] args) {
         Cookie cookie = Cookie.getInstance();
-        // 存入Cookie，以备使用
         if (args.length == 0) {
             LOGGER.warn("请在Secrets中填写BDUSS");
+            return;
         }
         cookie.setBDUSS(args[0]);
         Run run = new Run();
@@ -88,9 +77,7 @@ public class Run {
         run.runSign();
         LOGGER.info("共 {} 个贴吧 - 成功: {} - 失败: {} - {} ", followNum, success.size(), followNum - success.size(), failed);
         LOGGER.info("失效 {} 个贴吧: {} ", invalid.size(), invalid);
-        if (args.length == 2) {
-            run.send(args[1]);
-        }
+        run.sendNotification();
     }
 
     /**
@@ -198,79 +185,57 @@ public class Run {
     }
 
     /**
-     * 发送运行结果到微信，通过 server 酱
-     *
-     * @param sckey
-     * @author srcrs
-     * @Time 2020-10-31
+     * 发送签到结果通知
+     * 支持多种通知方式，会尝试所有已配置的通知渠道
      */
-    /**   public void send(String sckey) {
-       
-        String text = "总: " + followNum + " - ";
-        text += "成功: " + success.size() + " 失败: " + (followNum - success.size());
-        String desp = "共 " + followNum + " 贴吧\n\n";
-        desp += "成功: " + success.size() + " 失败: " + (followNum - success.size());
-        String body = "text=" + text + "&desp=" + "TiebaSignIn运行结果\n\n" + desp;
-        StringEntity entityBody = new StringEntity(body, "UTF-8");
-        HttpClient client = HttpClients.createDefault();
-        HttpPost httpPost = new HttpPost("https://sc.ftqq.com/" + sckey + ".send");
-        httpPost.addHeader("Content-Type", "application/x-www-form-urlencoded");
-        httpPost.setEntity(entityBody);
-        HttpResponse resp = null;
-        String respContent = null;
-        try {
-            resp = client.execute(httpPost);
-            HttpEntity entity = null;
-            if (resp.getStatusLine().getStatusCode() < 400) {
-                entity = resp.getEntity();
-            } else {
-                entity = resp.getEntity();
-            }
-            respContent = EntityUtils.toString(entity, "UTF-8");
-            LOGGER.info("server酱推送正常");
-        } catch (Exception e) {
-            LOGGER.error("server酱发送失败 -- " + e);
-        }
-    } 
-**/
-      /**
-     * 发送运行结果到微信，通过 PUSHPLUS
-     *
-     * @param sckey
-     * @author srcrs
-     * @Time 2020-10-31
+    public void sendNotification() {
+        String title = "百度贴吧自动签到";
+        String content = buildMessageContent();
+        NotificationKit.pushMessage(title, content);
+    }
+
+    /**
+     * 构建消息内容
      */
-     public void send(String sckey) {
-        /** 将要推送的数据 */
-        String text = "总: " + followNum + " - ";
-        text += "成功: " + success.size() + " 失败: " + (followNum - success.size());
-        String desp = "共 " + followNum + " 贴吧\n\n";
-        desp += "成功: " + success.size() + " 失败: " + (followNum - success.size());
-        String body = "text=" + text + "&desp=" + "TiebaSignIn运行结果\n\n" + desp;
+    private String buildMessageContent() {
+        StringBuilder sb = new StringBuilder();
+        sb.append("共 ").append(followNum).append(" 个贴吧\n");
+        sb.append("成功: ").append(success.size());
+        sb.append(" | 失败: ").append(failed.size());
+        sb.append(" | 失效: ").append(invalid.size()).append("\n\n");
 
-try {
-            String token = sckey;
-            String title = URLEncoder.encode("百度贴吧自动签到", "UTF-8");
-            String content = URLEncoder.encode(desp, "UTF-8");
-            String urlx = "https://www.pushplus.plus/send?title=" + title + "&content=" + content + "&token=" + token;
-            URL url = new URL(urlx);
-            HttpURLConnection connection = (HttpURLConnection) url.openConnection();
-            connection.setRequestMethod("GET");
-
-            BufferedReader reader = new BufferedReader(new InputStreamReader(connection.getInputStream()));
-            String line;
-            StringBuilder response = new StringBuilder();
-
-            while ((line = reader.readLine()) != null) {
-                response.append(line);
-            }
-            reader.close();
-
-            System.out.println("Response: " + response.toString());
-            connection.disconnect();
-
-        } catch (Exception e) {
-            e.printStackTrace();
+        if (!success.isEmpty()) {
+            sb.append("【签到成功】\n");
+            sb.append(formatTiebaList(success, 20)).append("\n\n");
         }
+
+        if (!failed.isEmpty()) {
+            sb.append("【签到失败】\n");
+            sb.append(formatTiebaList(new ArrayList<>(failed), 20)).append("\n\n");
+        }
+
+        if (!invalid.isEmpty()) {
+            sb.append("【失效贴吧】\n");
+            sb.append(formatTiebaList(invalid, 20));
+        }
+
+        return sb.toString().trim();
+    }
+
+    /**
+     * 格式化贴吧列表
+     * @param list 贴吧列表
+     * @param maxCount 最大显示数量
+     */
+    private String formatTiebaList(List<String> list, int maxCount) {
+        if (list.isEmpty()) {
+            return "无";
+        }
+        int count = Math.min(list.size(), maxCount);
+        String result = String.join(", ", list.subList(0, count));
+        if (list.size() > maxCount) {
+            result += " ...等" + list.size() + "个";
+        }
+        return result;
     }
 }
