@@ -139,11 +139,6 @@ BARK_WEBHOOK | https://api.day.app/xxx | Bark推送地址
 2. 获取 Webhook 地址
 3. 将地址填入 `FEISHU_WEBHOOK`
 
-### Bark
-1. 在 App Store 下载 Bark 应用
-2. 打开应用获取推送地址
-3. 将地址填入 `BARK_WEBHOOK`
-
 ---
 
 ## 注意事项
